@@ -1,0 +1,1054 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  active
+  inactive
+  suspended
+  blocked
+  pending_verification
+}
+
+enum BusinessStatus {
+  active
+  suspended
+  inactive
+  pending
+}
+
+enum MembershipStatus {
+  invited
+  active
+  suspended
+  removed
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  cancelled
+  expired
+  suspended
+}
+
+enum BillingPeriod {
+  monthly
+  yearly
+  lifetime
+}
+
+enum EntityStatus {
+  active
+  inactive
+}
+
+enum MovementType {
+  addition
+  reduction
+  adjustment
+  sale
+  purchase
+}
+
+enum SaleStatus {
+  completed
+  pending
+  cancelled
+  refunded
+}
+
+enum SaleType {
+  cash
+  credit
+}
+
+enum DebtDirection {
+  customer_owes
+  business_owes
+}
+
+enum DebtStatus {
+  open
+  partial
+  paid
+  overdue
+  cancelled
+}
+
+model User {
+  id                  String              @id @default(cuid())
+  name                String
+  firstName           String?
+  lastName            String?
+  email               String              @unique
+  emailVerified       Boolean             @default(false)
+  image               String?
+  status              UserStatus          @default(active)
+  phoneNumber         String?             @unique
+  phoneNumberVerified Boolean             @default(false)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  sessions            Session[]
+  accounts            Account[]
+  memberships         Membership[]
+  businessesCreated   Business[]          @relation("BusinessCreator")
+  membershipsInvited  Membership[]        @relation("MembershipInviter")
+  auditLogs           AuditLog[]
+  sales               Sale[]              @relation("SaleCreator")
+  expenses            Expense[]           @relation("ExpenseCreator")
+  inventoryMovements  InventoryMovement[] @relation("MovementCreator")
+  debtPayments        DebtPayment[]       @relation("DebtPaymentCreator")
+  notifications       Notification[]
+  notificationPrefs   NotificationPreference[]
+  pushDevices         PushDevice[]
+  files               File[]              @relation("FileUploader")
+
+    tickets       SupportTicket[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+model BusinessType {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  icon        String?
+  metadata    Json?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  businesses  Business[]
+
+  @@map("business_type")
+}
+
+model Business {
+  id             String         @id @default(cuid())
+  name           String
+  slug           String         @unique
+  businessTypeId String
+  businessType   BusinessType   @relation(fields: [businessTypeId], references: [id])
+  description    String?
+  logo           String?
+  phone          String?
+  email          String?
+  address        String?
+  country        String?
+  region         String?
+  district       String?
+  currency       String         @default("TZS")
+  timezone       String         @default("Africa/Dar_es_Salaam")
+  status         BusinessStatus @default(active)
+  createdById    String
+  createdBy      User           @relation("BusinessCreator", fields: [createdById], references: [id])
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  memberships        Membership[]
+  roles              Role[]
+  auditLogs          AuditLog[]
+  subscription       Subscription?
+  moduleOverrides    BusinessModule[]
+  productCategories  ProductCategory[]
+  products           Product[]
+  inventoryMovements InventoryMovement[]
+  customers          Customer[]
+  suppliers          Supplier[]
+  sales              Sale[]
+  payments           Payment[]
+  expenseCategories  ExpenseCategory[]
+  expenses           Expense[]
+  debts              Debt[]
+  smsMessages        SmsMessage[]
+  emailMessages      EmailMessage[]
+  files              File[]
+  apiKeys            ApiKey[]
+  webhookEndpoints   WebhookEndpoint[]
+    supportTickets      SupportTicket[]
+
+  @@map("business")
+}
+
+model Membership {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId  String
+  business    Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  roleId      String
+  role        Role             @relation(fields: [roleId], references: [id])
+  status      MembershipStatus @default(invited)
+  invitedById String?
+  invitedBy   User?            @relation("MembershipInviter", fields: [invitedById], references: [id])
+  invitedAt   DateTime         @default(now())
+  acceptedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([userId, businessId])
+  @@index([businessId])
+  @@map("membership")
+}
+
+model Role {
+  id          String             @id @default(cuid())
+  businessId  String
+  business    Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  key         String
+  description String?
+  isSystem    Boolean            @default(false)
+  isOwner     Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  permissions RolePermission[]
+  memberships Membership[]
+
+  @@unique([businessId, key])
+  @@map("role")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  group       String
+  description String?
+  createdAt   DateTime         @default(now())
+  roles       RolePermission[]
+
+  @@map("permission")
+}
+
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permission")
+}
+
+model AuditLog {
+  id           String     @id @default(cuid())
+  actorId      String?
+  actor        User?      @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorAdminId String?
+  actorAdmin   AdminUser? @relation(fields: [actorAdminId], references: [id], onDelete: SetNull)
+  businessId   String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String?
+  entityId   String?
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([businessId])
+  @@index([actorId])
+  @@map("audit_log")
+}
+
+model Module {
+  id              String           @id @default(cuid())
+  key             String           @unique
+  name            String
+  description     String?
+  isCore          Boolean          @default(false)
+  isActive        Boolean          @default(true)
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  packageModules  PackageModule[]
+  businessModules BusinessModule[]
+
+  @@map("module")
+}
+
+model Package {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  description   String?
+  price         Decimal        @default(0) @db.Decimal(12, 2)
+  currency      String         @default("TZS")
+  billingPeriod BillingPeriod  @default(monthly)
+  trialDays     Int            @default(0)
+  graceDays     Int            @default(0)
+  isActive      Boolean        @default(true)
+  isDefault     Boolean        @default(false)
+  sortOrder     Int            @default(0)
+  metadata      Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  limits        PackageLimit[]
+  modules       PackageModule[]
+  subscriptions Subscription[]
+
+  @@map("package")
+}
+
+model PackageLimit {
+  id        String   @id @default(cuid())
+  packageId String
+  package   Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  key       String
+  value     Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([packageId, key])
+  @@map("package_limit")
+}
+
+model PackageModule {
+  packageId String
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  moduleId  String
+  module    Module  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@id([packageId, moduleId])
+  @@map("package_module")
+}
+
+model Subscription {
+  id          String             @id @default(cuid())
+  businessId  String             @unique
+  business    Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  packageId   String
+  package     Package            @relation(fields: [packageId], references: [id])
+  status      SubscriptionStatus @default(trialing)
+  startDate   DateTime           @default(now())
+  endDate     DateTime?
+  trialEndsAt DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@map("subscription")
+}
+
+model BusinessModule {
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  moduleId   String
+  module     Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@id([businessId, moduleId])
+  @@map("business_module")
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  enabled     Boolean  @default(false)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("feature_flag")
+}
+
+model ProductCategory {
+  id          String       @id @default(cuid())
+  businessId  String
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  products    Product[]
+
+  @@unique([businessId, name])
+  @@map("product_category")
+}
+
+model Product {
+  id                String              @id @default(cuid())
+  businessId        String
+  business          Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  categoryId        String?
+  category          ProductCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  name              String
+  sku               String?
+  barcode           String?
+  buyingPrice       Decimal             @default(0) @db.Decimal(14, 2)
+  sellingPrice      Decimal             @default(0) @db.Decimal(14, 2)
+  stockQuantity     Decimal             @default(0) @db.Decimal(14, 3)
+  lowStockThreshold Decimal?            @db.Decimal(14, 3)
+  unit              String              @default("pcs")
+  image             String?
+  status            EntityStatus        @default(active)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  movements         InventoryMovement[]
+  saleItems         SaleItem[]
+
+  @@unique([businessId, sku])
+  @@index([businessId])
+  @@map("product")
+}
+
+model InventoryMovement {
+  id            String       @id @default(cuid())
+  businessId    String
+  business      Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type          MovementType
+  quantity      Decimal      @db.Decimal(14, 3)
+  reason        String?
+  referenceType String?
+  referenceId   String?
+  createdById   String?
+  createdBy     User?        @relation("MovementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+
+  @@index([businessId, productId])
+  @@index([referenceType, referenceId])
+  @@map("inventory_movement")
+}
+
+model Customer {
+  id         String       @id @default(cuid())
+  businessId String
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  notes      String?
+  status     EntityStatus @default(active)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  sales      Sale[]
+  debts      Debt[]
+
+  @@index([businessId])
+  @@map("customer")
+}
+
+model Supplier {
+  id         String       @id @default(cuid())
+  businessId String
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  notes      String?
+  status     EntityStatus @default(active)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  debts      Debt[]
+
+  @@index([businessId])
+  @@map("supplier")
+}
+
+model PaymentMethod {
+  id        String    @id @default(cuid())
+  key       String    @unique
+  name      String
+  isActive  Boolean   @default(true)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sales     Sale[]
+  payments  Payment[]
+  expenses  Expense[]
+  debtPayments DebtPayment[]
+
+  @@map("payment_method")
+}
+
+model Sale {
+  id             String         @id @default(cuid())
+  businessId     String
+  business       Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  receiptNo      String
+  customerId     String?
+  customer       Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  saleType       SaleType       @default(cash)
+  status         SaleStatus     @default(completed)
+  subtotal       Decimal        @db.Decimal(14, 2)
+  discount       Decimal        @default(0) @db.Decimal(14, 2)
+  tax            Decimal        @default(0) @db.Decimal(14, 2)
+  total          Decimal        @db.Decimal(14, 2)
+  paymentMethodId String?
+  paymentMethod  PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  soldById       String?
+  soldBy         User?          @relation("SaleCreator", fields: [soldById], references: [id], onDelete: SetNull)
+  notes          String?
+  idempotencyKey String?        @unique
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  items          SaleItem[]
+  payments       Payment[]
+  debts          Debt[]
+
+  @@unique([businessId, receiptNo])
+  @@index([businessId])
+  @@index([customerId])
+  @@map("sale")
+}
+
+model SaleItem {
+  id        String  @id @default(cuid())
+  saleId    String
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Decimal @db.Decimal(14, 3)
+  unitPrice Decimal @db.Decimal(14, 2)
+  discount  Decimal @default(0) @db.Decimal(14, 2)
+  total     Decimal @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+
+  @@index([saleId])
+  @@map("sale_item")
+}
+
+model Payment {
+  id              String         @id @default(cuid())
+  businessId      String
+  business        Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  saleId          String?
+  sale            Sale?          @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  amount          Decimal        @db.Decimal(14, 2)
+  paymentMethodId String?
+  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  reference       String?
+  paidAt          DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+
+  @@index([businessId])
+  @@index([saleId])
+  @@map("payment")
+}
+
+model ExpenseCategory {
+  id         String    @id @default(cuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name       String
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  expenses   Expense[]
+
+  @@unique([businessId, name])
+  @@map("expense_category")
+}
+
+model Expense {
+  id              String          @id @default(cuid())
+  businessId      String
+  business        Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  categoryId      String?
+  category        ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  amount          Decimal         @db.Decimal(14, 2)
+  description     String?
+  paymentMethodId String?
+  paymentMethod   PaymentMethod?  @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  date            DateTime        @default(now())
+  attachment      String?
+  createdById     String?
+  createdBy       User?           @relation("ExpenseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([businessId])
+  @@map("expense")
+}
+
+model Debt {
+  id             String        @id @default(cuid())
+  businessId     String
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  direction      DebtDirection
+  customerId     String?
+  customer       Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  supplierId     String?
+  supplier       Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  saleId         String?
+  sale           Sale?         @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  originalAmount Decimal       @db.Decimal(14, 2)
+  paidAmount     Decimal       @default(0) @db.Decimal(14, 2)
+  dueDate        DateTime?
+  status         DebtStatus    @default(open)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  payments       DebtPayment[]
+
+  @@index([businessId])
+  @@map("debt")
+}
+
+model DebtPayment {
+  id              String         @id @default(cuid())
+  debtId          String
+  debt            Debt           @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  amount          Decimal        @db.Decimal(14, 2)
+  paymentMethodId String?
+  paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  note            String?
+  createdById     String?
+  createdBy       User?          @relation("DebtPaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  paidAt          DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+
+  @@index([debtId])
+  @@map("debt_payment")
+}
+
+enum OtpPurpose {
+  registration
+  phone_verification
+  login_verification
+  password_reset
+  change_phone
+  sensitive_action
+}
+
+enum NotificationChannel {
+  in_app
+  push
+  sms
+  email
+}
+
+enum NotificationPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum MessageStatus {
+  queued
+  sent
+  delivered
+  failed
+}
+
+enum JobStatus {
+  pending
+  running
+  done
+  failed
+}
+
+enum AdminStatus {
+  active
+  suspended
+}
+
+model OtpRequest {
+  id         String     @id @default(cuid())
+  identifier String
+  purpose    OtpPurpose
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  maxAttempts Int       @default(3)
+  verifiedAt DateTime?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime   @default(now())
+
+  @@index([identifier, purpose])
+  @@map("otp_request")
+}
+
+model NotificationTemplate {
+  id        String              @id @default(cuid())
+  key       String
+  channel   NotificationChannel
+  subject   String?
+  body      String
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([key, channel])
+  @@map("notification_template")
+}
+
+model Notification {
+  id         String               @id @default(cuid())
+  userId     String
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId String?
+  type       String
+  title      String
+  message    String
+  priority   NotificationPriority @default(normal)
+  actionUrl  String?
+  readAt     DateTime?
+  createdAt  DateTime             @default(now())
+
+  @@index([userId, readAt])
+  @@map("notification")
+}
+
+model NotificationPreference {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel
+  event     String
+  enabled   Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([userId, channel, event])
+  @@map("notification_preference")
+}
+
+model PushDevice {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform     String
+  token        String    @unique
+  lastActiveAt DateTime  @default(now())
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("push_device")
+}
+
+model SmsMessage {
+  id          String        @id @default(cuid())
+  businessId  String?
+  business    Business?     @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  to          String
+  body        String
+  provider    String
+  status      MessageStatus @default(queued)
+  providerRef String?
+  error       String?
+  sentAt      DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([businessId])
+  @@map("sms_message")
+}
+
+model EmailMessage {
+  id          String        @id @default(cuid())
+  businessId  String?
+  business    Business?     @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  to          String
+  subject     String
+  body        String
+  provider    String
+  status      MessageStatus @default(queued)
+  providerRef String?
+  error       String?
+  sentAt      DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([businessId])
+  @@map("email_message")
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json
+  status      JobStatus @default(pending)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  runAt       DateTime  @default(now())
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAt])
+  @@map("job")
+}
+
+model File {
+  id          String    @id @default(cuid())
+  businessId  String?
+  business    Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  uploaderId  String?
+  uploader    User?     @relation("FileUploader", fields: [uploaderId], references: [id], onDelete: SetNull)
+  name        String
+  mime        String
+  size        Int
+  path        String
+  createdAt   DateTime  @default(now())
+
+  @@index([businessId])
+  @@map("file")
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  waiting
+  resolved
+  closed
+}
+
+enum TicketPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+model SupportTicket {
+  id          String               @id @default(cuid())
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId  String?
+  business    Business?            @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  subject     String
+  category    String
+  status      TicketStatus         @default(open)
+  priority    TicketPriority       @default(normal)
+  lastReplyAt DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  replies     SupportTicketReply[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("support_ticket")
+}
+
+model SupportTicketReply {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String
+  isAdmin   Boolean       @default(false)
+  body      String
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId])
+  @@map("support_ticket_reply")
+}
+
+enum BroadcastStatus {
+  draft
+  scheduled
+  sent
+  cancelled
+}
+
+model Broadcast {
+  id              String          @id @default(cuid())
+  title           String
+  body            String
+  audience        String          @default("all")
+  status          BroadcastStatus @default(draft)
+  createdByAdminId String
+  createdBy       AdminUser       @relation(fields: [createdByAdminId], references: [id])
+  sentAt          DateTime?
+  recipientCount  Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([status])
+  @@map("broadcast")
+}
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  isSecret    Boolean  @default(false)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_setting")
+}
+
+model AdminRole {
+  id          String                @id @default(cuid())
+  key         String                @unique
+  name        String
+  description String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  permissions AdminRolePermission[]
+  users       AdminUser[]
+
+  @@map("admin_role")
+}
+
+model AdminPermission {
+  id          String                @id @default(cuid())
+  key         String                @unique
+  group       String
+  description String?
+  createdAt   DateTime              @default(now())
+  roles       AdminRolePermission[]
+
+  @@map("admin_permission")
+}
+
+model AdminRolePermission {
+  roleId       String
+  role         AdminRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   AdminPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("admin_role_permission")
+}
+
+model AdminUser {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  name         String
+  passwordHash String
+  status       AdminStatus    @default(active)
+  roleId       String
+  role         AdminRole      @relation(fields: [roleId], references: [id])
+  lastLoginAt  DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  sessions     AdminSession[]
+  auditLogs    AuditLog[]
+  broadcasts   Broadcast[]
+
+  @@map("admin_user")
+}
+
+model AdminSession {
+  id          String    @id @default(cuid())
+  adminUserId String
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([adminUserId])
+  @@map("admin_session")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  businessId  String
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  prefix      String
+  secretHash  String    @unique
+  scopes      String[]
+  status      EntityStatus @default(active)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@index([businessId])
+  @@map("api_key")
+}
+
+model WebhookEndpoint {
+  id         String            @id @default(cuid())
+  businessId String
+  business   Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  url        String
+  secret     String
+  events     String[]
+  isActive   Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  deliveries WebhookDelivery[]
+
+  @@index([businessId])
+  @@map("webhook_endpoint")
+}
+
+model WebhookDelivery {
+  id           String          @id @default(cuid())
+  endpointId   String
+  endpoint     WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  event        String
+  payload      Json
+  status       MessageStatus   @default(queued)
+  attempts     Int             @default(0)
+  responseCode Int?
+  createdAt    DateTime        @default(now())
+  deliveredAt  DateTime?
+
+  @@index([endpointId])
+  @@map("webhook_delivery")
+}
